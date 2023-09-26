@@ -1,0 +1,130 @@
+trigger:
+- feature-789
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  veracodeAppProfile: AzDevOps.$(Build.DefinitionName)
+
+stages:
+- stage: Packaging
+  displayName: 'Packaging'
+  jobs:
+  - job: Packaging
+    steps: 
+    - task: ArchiveFiles@2
+      inputs:
+        rootFolderOrFile: '$(System.DefaultWorkingDirectory)'
+        includeRootFolder: true
+        archiveType: 'zip'
+        archiveFile: '$(System.DefaultWorkingDirectory)/$(Build.BuildId).zip'
+        replaceExistingArchive: true
+        verbose: true
+
+    - task: PublishBuildArtifacts@1
+      inputs:
+        PathtoPublish: '$(System.DefaultWorkingDirectory)/$(Build.BuildId).zip'
+        ArtifactName: 'drop'
+        publishLocation: 'Container'
+      
+- stage: ApplicationSecurityCheck 
+  displayName: Application Security Check 
+  dependsOn: Packaging
+  jobs:
+  - job: SAST
+    displayName: 'Veracode SAST'
+    steps:
+    - task: DownloadBuildArtifacts@1
+      inputs:
+        buildType: 'current'
+        downloadType: 'single'
+        artifactName: 'drop'
+        downloadPath: '$(System.ArtifactsDirectory)'
+      displayName: 'Carregando arquivos'
+      
+    - task: Veracode@3
+      inputs:
+        ConnectionDetailsSelection: 'Service Connection'
+        AnalysisService: 'Veracode'
+        veracodeAppProfile: 'Pygoat-Showroom'
+        version: '$(build.buildNumber)'
+        filepath: '$(System.ArtifactsDirectory)/drop/$(Build.BuildId).zip'
+        sandboxName: '$(System.StageDisplayName)'
+        createSandBox: false
+        createProfile: false
+        importResults: false
+        maximumWaitTime: '20'
+      displayName: 'Veracode Policy Scan'
+  
+  - job: SCA
+    displayName: 'Veracode SCA agent-based'
+    dependsOn: 
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: |
+                export SRCCLR_API_TOKEN=$(SRCCLR_API_TOKEN)
+                export SRCCLR_SCM_URI=$(Build.Repository.Uri)
+                export SRCCLR_SCM_REF=$(Build.SourceBranchName)
+                export SRCCLR_SCM_REF_TYPE="branch"
+                export SRCCLR_SCM_REV=$(Build.SourceVersion)
+                curl -sSL https://download.sourceclear.com/ci.sh | bash -s – scan  --allow-dirty --update-advisor --uri-as-name || true
+
+  - job: VeracodePipelineScan
+    displayName: 'Veracode Pipeline Scan'
+    steps:
+    - task: DownloadBuildArtifacts@1
+      inputs:
+        buildType: 'current'
+        downloadType: 'single'
+        artifactName: 'drop'
+        downloadPath: '$(System.ArtifactsDirectory)'
+      displayName: 'Carregando arquivos'
+
+    - task: VeracodePipelineScan@0
+      inputs:
+        VeracodeAPIID: '$(VID)'
+        VeracodeAPIsecret: '$(VKEY)'
+        fileToScan: '$(System.ArtifactsDirectory)/drop/$(Build.BuildId).zip'
+        additionalFlags: '--issue_details true --project_name "Pygoat-Showroom" --project_url "https://dev.azure.com/lucasferreira0413/PRJ-GOAT"'
+      displayName: 'Veracode Pipeline Scan'
+      
+# ====================== Pre HML ====================== #
+
+- stage: SecurityCheckHomolog
+  displayName: Security Check Homolog
+  dependsOn: ApplicationSecurityCheck
+  jobs:
+  - job: AquaImageScanning
+    displayName: 'Aqua Image Scanning'
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: |
+          docker pull pygoat/pygoat:latest
+          docker login registry.aquasec.com -u $(AQUA_USER) -p $(AQUA_PASS)
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock registry.aquasec.com/scanner:2303.7.8 scan -H $(AQUA_HOST) -A $(AQUA_TOKEN) --local pygoat/pygoat:latest --checkonly
+          docker logout registry.aquasec.com
+    continueOnError: true
+
+  - job: DeployAppHML
+    displayName: 'Deploy App HML'
+    dependsOn: AquaImageScanning
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: |
+          echo [+] ======== Deploying App ======== [+]
+          kubectl; sleep 21 || true 
+    continueOnError: true
+      
+  - job: VeracodeDast
+    displayName: 'Veracode Dast'
+    dependsOn: DeployAppHML
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: |
+          docker run --rm --env VERACODE_API_KEY_ID=$(VID) --env VERACODE_API_KEY_SECRET=$(VKEY) veracode/api-signing:cmd GET "https://api.veracode.com/appsec/v1/applications/?page=0&size=10"
+    continueOnError: true

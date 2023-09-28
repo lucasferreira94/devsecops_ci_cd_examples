@@ -1,0 +1,45 @@
+pipeline {
+    agent any 
+    environment {
+        caminhoPacote = 'target/verademo.war'
+        wrapperVersion = '23.8.12.0'
+    }
+    stages {
+        stage('Clean') { 
+            steps {
+                sh 'rm -rf pipeline-scan-LATEST.zip pipeline-scan.jar filtered_results.json'
+            }
+        }
+        stage('Build') { 
+            steps {
+                sh 'mvn clean package'
+                sh 'ls -l target/'
+            }
+        }
+
+        stage('Veracode SAST - Pipeline Scan') { 
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'veracode-credentials', passwordVariable: 'VKEY', usernameVariable: 'VID')]) {
+                    sh 'curl -sSO https://downloads.veracode.com/securityscan/pipeline-scan-LATEST.zip'
+                    sh 'unzip -o pipeline-scan-LATEST.zip'
+                    sh 'java -jar pipeline-scan.jar --veracode_api_id "${VID}" --veracode_api_key "${VKEY}" --file ${caminhoPacote} --project_name "Java-VeraDemo" || true'
+                }
+            }
+        }
+
+        stage('Veracode SAST - Pipeline Scan Baseline') { 
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'veracode-credentials', passwordVariable: 'VKEY', usernameVariable: 'VID')]) {
+                    sh 'curl -sSO https://downloads.veracode.com/securityscan/pipeline-scan-LATEST.zip'
+                    sh 'unzip -o pipeline-scan-LATEST.zip'
+
+                    // Download of results.json SAST pipeline scan with vulnerabilities resgistered before
+                    sh 'curl -L -o baseline.json https://raw.githubusercontent.com/lucasferreiram3/pipelinescan-baseline/main/results.json'
+                    
+                    // SAST Pipeline Scan with result.json as baseline file to search only for new vulnerabilities compared with the last scan
+                    sh 'java -jar pipeline-scan.jar --veracode_api_id "${VID}" --veracode_api_key "${VKEY}" --file ${caminhoPacote} --project_name "Java-VeraDemo" --baseline_file baseline.json'
+                }
+            }
+        }
+    }
+}

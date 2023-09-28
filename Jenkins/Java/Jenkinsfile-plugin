@@ -45,17 +45,12 @@ pipeline {
                 withCredentials([usernamePassword(credentialsId: 'veracode-credentials', passwordVariable: 'VKEY', usernameVariable: 'VID')]) {
                     sh 'curl -sSO https://downloads.veracode.com/securityscan/pipeline-scan-LATEST.zip'
                     sh 'unzip -o pipeline-scan-LATEST.zip'
-                    sh 'java -jar pipeline-scan.jar --veracode_api_id "${VID}" --veracode_api_key "${VKEY}" --file ${caminhoPacote} --json_output_file baseline.json --filtered_json_output_file results_filtered.json || true '
-                }
-            }
-        }
 
-        stage('Veracode SAST - Pipeline Scan Baseline File') { 
-            steps {
-                withCredentials([usernamePassword(credentialsId: 'veracode-credentials', passwordVariable: 'VKEY', usernameVariable: 'VID')]) {
-                    sh 'curl -sSO https://downloads.veracode.com/securityscan/pipeline-scan-LATEST.zip'
-                    sh 'unzip -o pipeline-scan-LATEST.zip'
-                    sh 'java -jar pipeline-scan.jar --veracode_api_id "${VID}" --veracode_api_key "${VKEY}" --file ${caminhoPacote} --project_name "Java-VeraDemo" --baseline_file baseline.json'
+                    // Request Custom Security Policy as a json file 
+                    sh 'java -jar pipeline-scan.jar --veracode_api_id "${VID}" --veracode_api_key "${VKEY}" --request_policy Veracode Recommended POV'
+                    
+                    // Start SAST Pipeline Scan based on Custom Security Policy
+                    sh 'java -jar pipeline-scan.jar --veracode_api_id "${VID}" --veracode_api_key "${VKEY}" --file ${caminhoPacote} --project_name "Java-VeraDemo" --policy_name "Veracode_Recommended_POV.json" '
                 }
             }
         }

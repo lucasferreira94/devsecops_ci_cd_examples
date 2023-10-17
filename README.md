@@ -1,4 +1,4 @@
-# Veracode-DevSecOps
+# devsecops-ci-cd-examples
 Automations to include security into various DevOps Pipelines
 
 ---

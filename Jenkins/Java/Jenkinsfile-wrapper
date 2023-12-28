@@ -5,28 +5,24 @@ pipeline {
         wrapperVersion = '23.8.12.0'
     }
     stages {
-        stage('Checkout') { 
-            steps {
-                git 'https://github.com/lucasferreiram3/verademo-java-web.git'
-                sh 'ls -l'
-            }
-        }
         stage('Clean') { 
             steps {
                 sh 'rm -rf pipeline-scan-LATEST.zip pipeline-scan.jar'
                 sh 'rm -rf veracode-wrapper.jar'
             }
         }
+        
         stage('Build') { 
             steps {
                 sh 'mvn clean package'
                 sh 'ls -l target/'
             }
         }
+
         stage('Veracode SCA - Agent Scan') { 
             steps {
                 withCredentials([string(credentialsId: 'SRCCLR_API_TOKEN', variable: 'SRCCLR_API_TOKEN')]) {
-                    sh 'curl -sSL https://download.sourceclear.com/ci.sh | bash -s scan --update-advisor --uri-as-name || true'
+                    sh 'curl -sSL https://download.sourceclear.com/ci.sh | bash -s – scan --update-advisor --uri-as-name --allow-dirty'
                 }
             }
         }
@@ -62,7 +58,7 @@ pipeline {
                     -appname "Java-VeraDemo" \
                     -createprofile false \
                     -filepath ${caminhoPacote} \
-                    -deleteincompletescan true \
+                    -deleteincompletescan 2 \
                     -version "${BUILD_NUMBER}"
                  """)
                 }

@@ -1,0 +1,14 @@
+pipeline {
+    agent any
+    stages {
+        stage("Read DSV secrets") {
+            steps {
+                sh 'dsv auth >> /dev/null'
+                script {
+                    SECRET1_PASS = sh (script: "dsv secret read secrets:demo2 --filter .attributes.password", returnStdout: true).trim()
+                }
+                echo "Secret from DSV is = ${SECRET1_PASS}"
+            }
+        }
+    }
+}
